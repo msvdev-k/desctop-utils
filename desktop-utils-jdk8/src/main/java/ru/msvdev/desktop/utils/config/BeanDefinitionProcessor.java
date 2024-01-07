@@ -7,6 +7,9 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Repository;
 import ru.msvdev.desktop.utils.data.EnableJpaEntities;
@@ -15,10 +18,7 @@ import ru.msvdev.desktop.utils.data.JpaRepositoryProxy;
 import ru.msvdev.desktop.utils.data.RepositoryFactoryUpdater;
 
 import javax.persistence.Entity;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -29,6 +29,12 @@ import java.util.stream.Collectors;
 
 @Component
 public class BeanDefinitionProcessor implements BeanDefinitionRegistryPostProcessor, BeanPostProcessor {
+
+    private final ResourcePatternResolver resourcePatternResolver;
+
+    {
+        resourcePatternResolver = new PathMatchingResourcePatternResolver();
+    }
 
     /**
      * key - beanName
@@ -50,18 +56,19 @@ public class BeanDefinitionProcessor implements BeanDefinitionRegistryPostProces
      * @return список полных имён классов (с названием пакета)
      */
     private List<String> findAllClassNames(String packageName) throws IOException {
-        try (InputStream stream = ClassLoader.getSystemClassLoader()
-                .getResourceAsStream(packageName.replaceAll("[.]", "/"))) {
+        String packageSearchPath = String.format(
+                "classpath*:%s/**/*.class",
+                packageName.replaceAll("[.]", "/"));
 
-            assert stream != null;
-            BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
+        Resource[] resources = resourcePatternResolver.getResources(packageSearchPath);
 
-            return reader.lines()
-                    .filter(line -> line.endsWith(".class"))
-                    .map(className -> className.substring(0, className.length() - 6))
-                    .map(className -> String.format("%s.%s", packageName, className))
-                    .collect(Collectors.toList());
-        }
+        return Arrays.stream(resources)
+                .map(Resource::getFilename)
+                .filter(Objects::nonNull)
+                .filter(fileName -> fileName.endsWith(".class"))
+                .map(className -> className.substring(0, className.length() - 6))
+                .map(className -> String.format("%s.%s", packageName, className))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -182,6 +189,7 @@ public class BeanDefinitionProcessor implements BeanDefinitionRegistryPostProces
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
     }
+
 
     @Override
     public Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
